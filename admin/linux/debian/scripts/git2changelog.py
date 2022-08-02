@@ -18,8 +18,7 @@ distribution="yakkety"
 versionTagRE = re.compile("^v([0-9]+((\.[0-9]+)+))(-(.+))?$")
 
 def processVersionTag(tag):
-    m = versionTagRE.match(tag)
-    if m:
+    if m := versionTagRE.match(tag):
         return (m.group(1), "release" if m.group(4) is None else "beta")
     else:
         return None
@@ -29,22 +28,18 @@ def getCommitVersion(commit):
     minor=None
     patch=None
     try:
-        for line in subprocess.check_output(["git", "show",
-                                             commit + ":VERSION.cmake"]).splitlines():
+        for line in subprocess.check_output(["git", "show", f"{commit}:VERSION.cmake"]).splitlines():
             m = re.match("set\( MIRALL_VERSION_([A-Z]+) +([0-9]+) *\)", line)
             if m is not None:
-                kind=m.group(1)
-                version=m.group(2)
+                kind = m[1]
+                version = m[2]
                 if kind=="MAJOR":
                     major=version
                 elif kind=="MINOR":
                     minor=version
                 elif kind=="PATCH":
                     patch=version
-        if major and minor and patch:
-            return major + "." + minor + "." + patch
-        else:
-            return None
+        return f"{major}.{minor}.{patch}" if major and minor and patch else None
     except:
         return None
 
@@ -54,11 +49,14 @@ def collectEntries(baseCommit, baseVersion, kind, finalBaseVersion, finalRevDate
     newVersionTag = None
     newVersionOrigTag = None
 
-    if config is not None and config.has_section("versionhack"):
-        if config.has_option("versionhack", "commit") and \
-           config.has_option("versionhack", "tag"):
-            newVersionCommit = config.get("versionhack", "commit")
-            newVersionTag = config.get("versionhack", "tag")
+    if (
+        config is not None
+        and config.has_section("versionhack")
+        and config.has_option("versionhack", "commit")
+        and config.has_option("versionhack", "tag")
+    ):
+        newVersionCommit = config.get("versionhack", "commit")
+        newVersionTag = config.get("versionhack", "tag")
 
     entries = []
 
@@ -66,7 +64,7 @@ def collectEntries(baseCommit, baseVersion, kind, finalBaseVersion, finalRevDate
             "--format=%h%x09%an%x09%ae%x09%aD%x09%ad%x09%s",
             "--date=unix", "--author-date-order", "--reverse"]
     try:
-        output = subprocess.check_output(args + [baseCommit + ".."])
+        output = subprocess.check_output(args + [f"{baseCommit}.."])
     except:
         output = subprocess.check_output(args)
 
@@ -75,26 +73,24 @@ def collectEntries(baseCommit, baseVersion, kind, finalBaseVersion, finalRevDate
     lastCMAKEVersion = None
     for line in output.splitlines():
         words = line.split("\t")
-        (commit, name, email, date, revdate) = words[0:5]
+        (commit, name, email, date, revdate) = words[:5]
         subject = "\t".join(words[5:])
 
         revdate = datetime.datetime.utcfromtimestamp(long(revdate)).strftime("%Y%m%d.%H%M%S")
-        revdate += "." + commit
+        revdate += f".{commit}"
 
         kind = "alpha"
 
         if commit==newVersionCommit:
-            result = processVersionTag(newVersionTag)
-            if result:
+            if result := processVersionTag(newVersionTag):
                 newVersionOrigTag = lastVersionTag
                 (baseVersion, _kind) = result
 
         version=getCommitVersion(commit)
         if version and version!=lastCMAKEVersion:
-            tag = "v" + version
+            tag = f"v{version}"
             if tag!=newVersionOrigTag:
-                result = processVersionTag(tag)
-                if result:
+                if result := processVersionTag(tag):
                     lastVersionTag = tag
                     lastCMAKEVersion = version
                     (baseVersion, _kind) = result
@@ -103,8 +99,7 @@ def collectEntries(baseCommit, baseVersion, kind, finalBaseVersion, finalRevDate
                                             "--points-at",
                                             commit]).splitlines():
             if tag!=newVersionOrigTag:
-                result = processVersionTag(tag)
-                if result:
+                if result := processVersionTag(tag):
                     lastVersionTag = tag
                     (baseVersion, kind) = result
 
@@ -135,16 +130,16 @@ def genChangeLogEntries(f, entries, distribution):
             latestBaseVersion = baseVersion
             latestRevDate = revdate
             latestKind = kind
-        upstreamVersion = baseVersion + "-" + revdate
+        upstreamVersion = f"{baseVersion}-{revdate}"
         if distribution=="stable":
             version = upstreamVersion
         else:
-            version = upstreamVersion + "-1.0~" + distribution + "1"
-        print("nextcloud-desktop (%s) %s; urgency=medium" % (version, distribution), file=f)
+            version = f"{upstreamVersion}-1.0~{distribution}1"
+        print(f"nextcloud-desktop ({version}) {distribution}; urgency=medium", file=f)
         print(file=f)
-        print("  * " + subject, file=f)
+        print(f"  * {subject}", file=f)
         print(file=f)
-        print(" -- %s <%s>  %s" % (name, email, date), file=f)
+        print(f" -- {name} <{email}>  {date}", file=f)
         print(file=f)
     return (latestBaseVersion, latestRevDate, latestKind)
 
@@ -160,11 +155,13 @@ if __name__ == "__main__":
         config = ConfigParser.SafeConfigParser()
         config.read(configPath)
 
-        if config.has_section("base"):
-            if config.has_option("base", "commit") and \
-               config.has_option("base", "version"):
-                baseCommit = config.get("base", "commit")
-                baseVersion = config.get("base", "version")
+        if (
+            config.has_section("base")
+            and config.has_option("base", "commit")
+            and config.has_option("base", "version")
+        ):
+            baseCommit = config.get("base", "commit")
+            baseVersion = config.get("base", "version")
 
     distribution = sys.argv[2]
     finalRevDate = sys.argv[3] if len(sys.argv)>3 else None

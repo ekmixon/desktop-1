@@ -32,11 +32,11 @@ from gi.repository import GObject, Nautilus
 # occurrences of the name
 appname = 'Nextcloud'
 
-print("Initializing "+appname+"-client-nautilus extension")
-print("Using python version {}".format(sys.version_info))
+print(f"Initializing {appname}-client-nautilus extension")
+print(f"Using python version {sys.version_info}")
 
 def get_local_path(url):
-    if url[0:7] == 'file://':
+    if url[:7] == 'file://':
         url = url[7:]
     unquote = urllib.parse.unquote if python3 else urllib.unquote
     return unquote(url)
@@ -49,8 +49,7 @@ def get_runtime_dir():
     try:
         return os.environ['XDG_RUNTIME_DIR']
     except KeyError:
-        fallback = os.path.join(tempfile.gettempdir(), 'runtime-' + os.environ['USER'])
-        return fallback
+        return os.path.join(tempfile.gettempdir(), 'runtime-' + os.environ['USER'])
 
 
 class SocketConnect(GObject.GObject):
@@ -104,7 +103,7 @@ class SocketConnect(GObject.GObject):
 
                 return False  # Don't run again
             except Exception as e:
-                print("Could not connect to unix socket " + sock_file + ". " + str(e))
+                print(f"Could not connect to unix socket {sock_file}. {str(e)}")
         except Exception as e:  # Bad habbit
             print("Connect could not be established, try again later.")
             self._sock.close()
@@ -209,10 +208,7 @@ class MenuExtension_ownCloud(GObject.GObject, Nautilus.MenuProvider):
             filename = get_local_path(file_uri.get_uri())
             filename = os.path.realpath(filename)
 
-            # Check if its a folder (ends with an /), if yes add a "/"
-            # otherwise it will not find the entry in the table
-            isDir = os.path.isdir(filename + os.sep)
-            if isDir:
+            if isDir := os.path.isdir(filename + os.sep):
                 filename += os.sep
 
             # Check if toplevel folder, we need to ignore those as they cannot be shared
@@ -234,7 +230,7 @@ class MenuExtension_ownCloud(GObject.GObject, Nautilus.MenuProvider):
     def ask_for_menu_items(self, files):
         record_separator = '\x1e'
         filesstring = record_separator.join(files)
-        socketConnect.sendCommand(u'GET_MENU_ITEMS:{}\n'.format(filesstring))
+        socketConnect.sendCommand(f'GET_MENU_ITEMS:{filesstring}\n')
 
         done = False
         start = time.time()
@@ -263,7 +259,7 @@ class MenuExtension_ownCloud(GObject.GObject, Nautilus.MenuProvider):
         if not done:
             return self.legacy_menu_items(files)
 
-        if len(menu_items) == 0:
+        if not menu_items:
             return []
 
         # Set up the 'ownCloud...' submenu
@@ -343,7 +339,7 @@ class MenuExtension_ownCloud(GObject.GObject, Nautilus.MenuProvider):
 
     def context_menu_action(self, menu, action, filename):
         # print("Context menu: " + action + ' ' + filename)
-        socketConnect.sendCommand(action + ":" + filename + "\n")
+        socketConnect.sendCommand(f"{action}:{filename}" + "\n")
 
 
 class SyncStateExtension_ownCloud(GObject.GObject, Nautilus.InfoProvider):
@@ -368,10 +364,10 @@ class SyncStateExtension_ownCloud(GObject.GObject, Nautilus.InfoProvider):
             fileStatus = socketConnect.sendCommand("RETRIEVE_FILE_STATUS:"+file+"\n");
 
     def invalidate_items_underneath(self, path):
-        update_items = []
         if not socketConnect.nautilusVFSFile_table:
             self.askForOverlay(path)
         else:
+            update_items = []
             for p in socketConnect.nautilusVFSFile_table:
                 if p == path or p.startswith(path):
                     item = socketConnect.nautilusVFSFile_table[p]['item']
@@ -384,12 +380,24 @@ class SyncStateExtension_ownCloud(GObject.GObject, Nautilus.InfoProvider):
     def handle_commands(self, action, args):
         # file = args[0]  # For debug only
         # print("Action for " + file + ": " + args[0])  # For debug only
-        if action == 'STATUS':
+        if (
+            action != 'STATUS'
+            and action == 'UPDATE_VIEW'
+            and args[0] in socketConnect.registered_paths
+            or action != 'STATUS'
+            and action != 'UPDATE_VIEW'
+            and action == 'REGISTER_PATH'
+            or action != 'STATUS'
+            and action != 'UPDATE_VIEW'
+            and action == 'UNREGISTER_PATH'
+        ):
+            self.invalidate_items_underneath(args[0])
+
+        elif (action == 'STATUS' or action != 'UPDATE_VIEW') and action == 'STATUS':
             newState = args[0]
             filename = ':'.join(args[1:])
 
-            itemStore = self.find_item_for_file(filename)
-            if itemStore:
+            if itemStore := self.find_item_for_file(filename):
                 if( not itemStore['state'] or newState != itemStore['state'] ):
                     item = itemStore['item']
 
@@ -413,33 +421,23 @@ class SyncStateExtension_ownCloud(GObject.GObject, Nautilus.InfoProvider):
                         'state': newState,
                         'skipNextUpdate': invalidate }
 
-        elif action == 'UPDATE_VIEW':
-            # Search all items underneath this path and invalidate them
-            if args[0] in socketConnect.registered_paths:
-                self.invalidate_items_underneath(args[0])
-
-        elif action == 'REGISTER_PATH':
-            self.invalidate_items_underneath(args[0])
-        elif action == 'UNREGISTER_PATH':
-            self.invalidate_items_underneath(args[0])
-
     def set_emblem(self, item, state):
-        Emblems = { 'OK'        : appname +'_ok',
-                    'SYNC'      : appname +'_sync',
-                    'NEW'       : appname +'_sync',
-                    'IGNORE'    : appname +'_warn',
-                    'ERROR'     : appname +'_error',
-                    'OK+SWM'    : appname +'_ok_shared',
-                    'SYNC+SWM'  : appname +'_sync_shared',
-                    'NEW+SWM'   : appname +'_sync_shared',
-                    'IGNORE+SWM': appname +'_warn_shared',
-                    'ERROR+SWM' : appname +'_error_shared',
-                    'NOP'       : ''
-                  }
+        Emblems = {
+            'OK': f'{appname}_ok',
+            'SYNC': f'{appname}_sync',
+            'NEW': f'{appname}_sync',
+            'IGNORE': f'{appname}_warn',
+            'ERROR': f'{appname}_error',
+            'OK+SWM': f'{appname}_ok_shared',
+            'SYNC+SWM': f'{appname}_sync_shared',
+            'NEW+SWM': f'{appname}_sync_shared',
+            'IGNORE+SWM': f'{appname}_warn_shared',
+            'ERROR+SWM': f'{appname}_error_shared',
+            'NOP': '',
+        }
 
-        emblem = 'NOP' # Show nothing if no emblem is defined.
-        if state in Emblems:
-            emblem = Emblems[state]
+
+        emblem = Emblems.get(state, 'NOP')
         item.add_emblem(emblem)
 
     def update_file_info(self, item):
@@ -451,11 +449,10 @@ class SyncStateExtension_ownCloud(GObject.GObject, Nautilus.InfoProvider):
         if item.is_directory():
             filename += os.sep
 
-        inScope = False
-        for reg_path in socketConnect.registered_paths:
-            if filename.startswith(reg_path):
-                inScope = True
-                break
+        inScope = any(
+            filename.startswith(reg_path)
+            for reg_path in socketConnect.registered_paths
+        )
 
         if not inScope:
             return

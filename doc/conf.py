@@ -289,4 +289,4 @@ epub_copyright = u'2013-2018, The Nextcloud developers'
 # Include todos?
 todo_include_todos = True
 
-rst_epilog =  '.. |version| replace:: %s' % version
+rst_epilog = f'.. |version| replace:: {version}'

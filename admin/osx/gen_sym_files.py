@@ -27,9 +27,8 @@ def extractDeps(macho):
     for l in otool.communicate()[0].splitlines():
         if 'is not an object file' in l:
             return []
-        m = re.search(r'@[^\s]+', l)
-        if m:
-            path = resolvePath(m.group(0))
+        if m := re.search(r'@[^\s]+', l):
+            path = resolvePath(m[0])
             if not os.path.exists(path):
                 logging.warning("Non-existant file found in dependencies, ignoring: [%s]", path)
                 continue
@@ -50,14 +49,14 @@ def findDeps():
 
 def dumpSyms(deps):
     for dep in deps:
-        print("Generating symbols for [%s]" % dep)
+        print(f"Generating symbols for [{dep}]")
         with open('temp.sym', 'w') as temp:
             subprocess.check_call([dump_symsPath, dep], stdout=temp)
         with open('temp.sym', 'r') as temp:
             header = temp.readline()
             fields = header.split()
             key, name = fields[3:5]
-        destDir = '%s/%s/%s/' % (outPath, name, key)
+        destDir = f'{outPath}/{name}/{key}/'
         destPath = destDir + name + '.sym'
         if os.path.exists(destPath):
             logging.warning("Symbols already exist: [%s]", destPath)
@@ -68,10 +67,10 @@ def dumpSyms(deps):
 
 def strip(deps):
     for dep in deps:
-        print("Stripping symbols off [%s]" % dep)
+        print(f"Stripping symbols off [{dep}]")
         subprocess.check_call(['strip', '-S', dep])
 
-print('=== Generating symbols for [%s] in [%s]' % (bundlePath, outPath))
+print(f'=== Generating symbols for [{bundlePath}] in [{outPath}]')
 deps = findDeps()
 dumpSyms(deps)
 strip(deps)
